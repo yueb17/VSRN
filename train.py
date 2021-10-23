@@ -74,6 +74,12 @@ def main():
     parser.add_argument('--reset_train', action='store_true',
                         help='Ensure the training is always done in '
                         'train mode (Not recommended).')
+    # semi
+    parser.add_argument('--semi_train_percent', default=1.0, type=float,
+                        help='decide the available training data partition for '
+                        'semi-supervised setting')
+    parser.add_argument('--semi_mode', type=str, default="", choices=['', 'baseline'],
+                        help='semi supervised mode')
 
     ###caption parameters
     parser.add_argument(

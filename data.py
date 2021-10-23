@@ -7,6 +7,7 @@ from PIL import Image
 from pycocotools.coco import COCO
 import numpy as np
 import json as jsonmod
+import random
 
 
 def get_paths(path, name='coco', use_restval=False):
@@ -226,6 +227,30 @@ class PrecompDataset(data.Dataset):
             self.length = 5000
 
         self.max_len = opt.max_len
+
+        # semi partition: update info
+        if data_split == 'train' and opt.semi_train_percent < 1:
+            num_image_semi = int(self.images.shape[0] * opt.semi_train_percent)
+            semi_image_index = random.sample(range(0, self.images.shape[0]), num_image_semi) # list
+            semi_image_labeled = self.images[semi_image_index]
+            
+            semi_text_index = []
+            for each_image_index in semi_image_index:
+                for i in range(self.im_div):
+                    semi_text_index.append(each_image_index*self.im_div + i)
+            semi_text_labeled = np.array(self.captions)[semi_text_index].tolist()
+
+            if opt.semi_mode == 'baseline':
+                # del self.images, self.captions # check if need delete them
+                self.images = semi_image_labeled
+                self.captions = semi_text_labeled
+                self.length = len(self.captions)
+
+            # save random index
+            image_file = opt.logger_name + '/random_image_index.npy'
+            text_file = opt.logger_name + '/random_text_index.npy'
+            np.save(image_file, np.array(semi_image_index))
+            np.save(text_file, np.array(semi_text_index))
 
     def __getitem__(self, index):
         # handle the image redundancy
