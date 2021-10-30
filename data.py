@@ -8,6 +8,7 @@ from pycocotools.coco import COCO
 import numpy as np
 import json as jsonmod
 import random
+from pdb import set_trace as st
 
 
 def get_paths(path, name='coco', use_restval=False):
@@ -229,28 +230,50 @@ class PrecompDataset(data.Dataset):
         self.max_len = opt.max_len
 
         # semi partition: update info
-        if data_split == 'train' and opt.semi_train_percent < 1:
-            num_image_semi = int(self.images.shape[0] * opt.semi_train_percent)
-            semi_image_index = random.sample(range(0, self.images.shape[0]), num_image_semi) # list
-            semi_image_labeled = self.images[semi_image_index]
-            
-            semi_text_index = []
-            for each_image_index in semi_image_index:
-                for i in range(self.im_div):
-                    semi_text_index.append(each_image_index*self.im_div + i)
-            semi_text_labeled = np.array(self.captions)[semi_text_index].tolist()
+        if opt.semi_mode == 'baseline':
+            if data_split == 'train' and opt.semi_train_percent < 1:
+                num_image_semi = int(self.images.shape[0] * opt.semi_train_percent)
+                semi_image_index = random.sample(range(0, self.images.shape[0]), num_image_semi) # list
+                semi_image_labeled = self.images[semi_image_index]
+                
+                semi_text_index = []
+                for each_image_index in semi_image_index:
+                    for i in range(self.im_div):
+                        semi_text_index.append(each_image_index*self.im_div + i)
+                semi_text_labeled = np.array(self.captions)[semi_text_index].tolist()
 
-            if opt.semi_mode == 'baseline':
-                # del self.images, self.captions # check if need delete them
-                self.images = semi_image_labeled
-                self.captions = semi_text_labeled
-                self.length = len(self.captions)
+                if opt.semi_mode == 'baseline':
+                    # del self.images, self.captions # check if need delete them
+                    self.images = semi_image_labeled
+                    self.captions = semi_text_labeled
+                    self.length = len(self.captions)
 
-            # save random index
-            image_file = opt.logger_name + '/random_image_index.npy'
-            text_file = opt.logger_name + '/random_text_index.npy'
-            np.save(image_file, np.array(semi_image_index))
-            np.save(text_file, np.array(semi_text_index))
+                # save random index
+                image_file = opt.logger_name + '/random_image_index.npy'
+                text_file = opt.logger_name + '/random_text_index.npy'
+                np.save(image_file, np.array(semi_image_index))
+                np.save(text_file, np.array(semi_text_index))
+
+        if opt.semi_mode == 'PL' and data_split == 'train':
+            pretrain_imgs_index = list(np.load(opt.inherit_path + '/random_image_index.npy'))
+            pretrain_caps_index = list(np.load(opt.inherit_path + '/random_text_index.npy'))
+
+            PL_imgs_index = list(np.load(opt.inherit_path + '/alg_imgs_index0.1.npy'))
+            PL_imgs_index_ = []
+            for i in range(len(PL_imgs_index)): # 5N
+                if i % self.im_div == 0:
+                    PL_imgs_index_.append( PL_imgs_index[i]/5 )
+            PL_caps_index = list(np.load(opt.inherit_path + '/alg_caps_index0.1.npy'))
+            # st()
+
+            mix_imgs_index = pretrain_imgs_index + PL_imgs_index_[ :int(len(PL_imgs_index_)*0.4) ]
+            mix_caps_index = pretrain_caps_index + PL_caps_index[ :int(len(PL_caps_index)*0.4) ]
+            # st()
+
+            self.images = self.images[mix_imgs_index]
+            self.captions=np.array(self.captions)[mix_caps_index].tolist()
+            self.length = len(self.captions)
+
 
     def __getitem__(self, index):
         # handle the image redundancy

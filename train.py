@@ -78,8 +78,10 @@ def main():
     parser.add_argument('--semi_train_percent', default=1.0, type=float,
                         help='decide the available training data partition for '
                         'semi-supervised setting')
-    parser.add_argument('--semi_mode', type=str, default="", choices=['', 'baseline'],
+    parser.add_argument('--semi_mode', type=str, default="", choices=['', 'baseline', 'PL'],
                         help='semi supervised mode')
+    parser.add_argument('--inherit_path', default='', type=str,
+                        help='folder path to inherit baseline and PL index')
 
     ###caption parameters
     parser.add_argument(

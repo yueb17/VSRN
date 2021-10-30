@@ -10,6 +10,7 @@ import os
 import pickle
 from vocab import Vocabulary  # NOQA
 import nltk
+import time
 
 # define unlabeled training dataloader
 def collate_fn(data):
@@ -314,35 +315,94 @@ def check_order(img_ids, cap_ids, div=5):
     else:
         print("MIS MATCHED!!! GO FOR CHECK!!!")
 
-def maxRank_alignment():
-    # 
-    # from image to retrieve captions: 1 img to 5 caps
-    new_img_id2full = PL_text_index
-    new_cap_id2PL = []
-    for i in range(len(i2t_top5)):
-        for j in i2t_top5[i]:
-            new_cap_id2PL.append(j)
-    new_cap_id2full = list(np.array(PL_text_index)[new_cap_id2PL])
+# def maxRank_alignment():
+#     # 
+#     # from image to retrieve captions: 1 img to 5 caps
+#     new_img_id2full = PL_text_index
+#     new_cap_id2PL = []
+#     for i in range(len(i2t_top5)):
+#         for j in i2t_top5[i]:
+#             new_cap_id2PL.append(j)
+#     new_cap_id2full = list(np.array(PL_text_index)[new_cap_id2PL])
 
-    i2tPL_img = img_embs[new_img_id2full]
-    i2tPL_cap = cap_embs[new_cap_id2full]
+#     i2tPL_img = img_embs[new_img_id2full]
+#     i2tPL_cap = cap_embs[new_cap_id2full]
 
-    # from caption to retrieve images: 1 cap to 1 img
-    new_cap_id2full = PL_text_index
+#     # from caption to retrieve images: 1 cap to 1 img
+#     new_cap_id2full = PL_text_index
+#     # st()
+#     new_img_id2PL = [int(i*opt.div) for i in t2i_top1]
+#     new_img_id2full = list(np.array(PL_text_index)[new_img_id2PL])
+
+#     t2iPL_img = img_embs[new_img_id2full]
+#     t2iPL_cap = cap_embs[new_cap_id2full]
+
+#     # test PL set
+#     i2t_top5_, t2i_top1_ = evaluate(i2tPL_img, i2tPL_cap, opt)
+#     # st()
+#     i2t_top5_, t2i_top1_ = evaluate(t2iPL_img, t2iPL_cap, opt)
+# #     # st()
+
+def noMiss_alignment(imgs, caps, opt): # 5N * 5N
+    imgs_inds = [i for i in range(0, len(imgs), opt.div)]
+    imgs_ = imgs[imgs_inds] # N
+
+    i2t_mat = np.dot(imgs_, caps.T) # N * 5N
+    div_list = []
+    for i in range(opt.div):
+        each_div_list = [j+i for j in range(0, len(imgs), opt.div)]
+        div_list.append(each_div_list)
     # st()
-    new_img_id2PL = [int(i*opt.div) for i in t2i_top1]
-    new_img_id2full = list(np.array(PL_text_index)[new_img_id2PL])
 
-    t2iPL_img = img_embs[new_img_id2full]
-    t2iPL_cap = cap_embs[new_cap_id2full]
+    div_times_ = 0
+    for each_list in div_list:
+        div_times_ = div_times_ + i2t_mat[:,each_list]
 
-    # test PL set
-    i2t_top5_, t2i_top1_ = evaluate(i2tPL_img, i2tPL_cap, opt)
+    i2t_mat_ = div_times_/opt.div # N * N
+
+    lowest = np.min(i2t_mat_)
+    removal_value = lowest - 1
+
     # st()
-    i2t_top5_, t2i_top1_ = evaluate(t2iPL_img, t2iPL_cap, opt)
-    # st()
+    pairs = []
+    for itr in range( len(i2t_mat_) ): # iterate N times
+        if itr % 100 == 0:
+            print(itr)
+        
+        each_max_pos = np.argmax(i2t_mat_)
+        row, col = divmod(each_max_pos, i2t_mat_.shape[1])
 
-def noMiss_alignment():
+        i2t_mat_[row,:] = removal_value
+        i2t_mat_[:,col] = removal_value
+
+        each_pair = np.array([row, col])
+
+        pairs.append(each_pair)
+        
+
+    pairs = np.array(pairs)
+
+    if len(set(pairs[:,0])) == len(pairs) and len(set(pairs[:,1])) == len(pairs) and len((set(pairs[:,0]) - set(pairs[:,1]))) == 0:
+        print("ALL GOOD FOR PAIRS!!!")
+
+    acc = np.count_nonzero(pairs[:,0] - pairs[:,1]) / float(len(pairs))
+    print('Div times avg PL acc:', 1-acc)
+    # st()
+    
+    # recover to 5*N times
+    alg_imgs_index = []
+    alg_caps_index = []
+    for i in range(len(pairs)): # N 
+        for j in range(opt.div): # 5
+            alg_imgs_index.append(pairs[i,0]*opt.div+j)
+            alg_caps_index.append(pairs[i,1]*opt.div+j)
+
+    return alg_imgs_index, alg_caps_index
+
+
+
+
+    
 
 
 
@@ -457,11 +517,24 @@ def main():
     U_caps = cap_embs[unlabeled_text_index]
 
     PL_imgs = img_embs[PL_text_index]
-    PL_caps = cap_embs[PL_text_index]    
+    PL_caps = cap_embs[PL_text_index]
     # st()
+    # compute 
+    alg_imgs_index, alg_caps_index = noMiss_alignment(PL_imgs, PL_caps, opt)
+    # load
+    # alg_imgs_index = np.load(opt.baseline_model_path + '/alg_imgs_index' + str(opt.PL_ratio) + '.npy')
+    # alg_caps_index = np.load(opt.baseline_model_path + '/alg_caps_index' + str(opt.PL_ratio) + '.npy')
+    alg_imgs = img_embs[alg_imgs_index]
+    alg_caps = cap_embs[alg_caps_index]
+    i2t_top5, t2i_top1 = evaluate(alg_imgs, alg_caps, opt)
+
+    # save alg index
+    # np.save(opt.baseline_model_path + '/alg_imgs_index' + str(opt.PL_ratio) + '.npy', alg_imgs_index)
+    # np.save(opt.baseline_model_path + '/alg_caps_index' + str(opt.PL_ratio) + '.npy', alg_caps_index)
+
 
     # get P labels. NOTE: from both sides
-    i2t_top5, t2i_top1 = evaluate(PL_imgs, PL_caps, opt) # get rank scores and print performances
+    # i2t_top5, t2i_top1 = evaluate(PL_imgs, PL_caps, opt) # get rank scores and print performances
     
     
 
